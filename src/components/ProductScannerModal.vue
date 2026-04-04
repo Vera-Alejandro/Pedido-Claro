@@ -2,12 +2,8 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { BrowserMultiFormatReader } from '@zxing/browser'
+import { NotFoundException } from '@zxing/library'
 import { useToast } from 'primevue/usetoast'
-import Button from 'primevue/button'
-import Dialog from 'primevue/dialog'
-import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
-import ProgressSpinner from 'primevue/progressspinner'
 import { useCatalogStore } from '../stores/catalog'
 import { lookupBarcode } from '../services/openFoodFactsService'
 import type { Product } from '../types'
@@ -103,7 +99,12 @@ async function onFileCapture(event: Event) {
     detectedBarcode.value = result.getText()
     URL.revokeObjectURL(url)
     await queryProduct(detectedBarcode.value)
-  } catch {
+  } catch (error) {
+    if (error instanceof NotFoundException) {
+      errorMessage.value = t('scanner.barcodeNotFound')
+    }
+
+    console.error('Error reading barcode from image', error)
     URL.revokeObjectURL(url)
     errorMessage.value = t('scanner.barcodeError')
     state.value = 'error'

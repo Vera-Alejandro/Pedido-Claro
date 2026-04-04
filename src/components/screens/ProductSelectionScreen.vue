@@ -1,12 +1,4 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import Card from 'primevue/card'
-import Chip from 'primevue/chip'
-import IconField from 'primevue/iconfield'
-import InputIcon from 'primevue/inputicon'
-import InputSwitch from 'primevue/inputswitch'
-import InputText from 'primevue/inputtext'
-import Tag from 'primevue/tag'
 import { computed, ref } from 'vue'
 
 import { useCatalogStore } from '../../stores/catalog'
@@ -95,7 +87,7 @@ function goNext() {
 
       <div class="flex items-center justify-between rounded-lg bg-orange-50 px-3 py-2">
         <span class="text-sm font-medium text-slate-700">{{ $t('selectedOnly') }}</span>
-        <InputSwitch
+        <ToggleSwitch
           :model-value="catalogStore.selectedOnly"
           @update:model-value="catalogStore.setSelectedOnly(Boolean($event))"
         />

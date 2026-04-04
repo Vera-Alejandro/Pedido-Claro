@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import SelectButton from 'primevue/selectbutton'
 import { computed } from 'vue'
 
 import { useAppStore } from '../stores/app'
