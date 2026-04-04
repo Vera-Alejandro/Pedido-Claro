@@ -12,6 +12,7 @@ export interface Product {
   packageEs: string
   packageEn: string
   imageUrl: string
+  isScanned?: boolean
 }
 
 export interface DraftLine {

@@ -1,22 +1,17 @@
 <script setup lang="ts">
-import Button from 'primevue/button'
-import Card from 'primevue/card'
-import Chip from 'primevue/chip'
-import IconField from 'primevue/iconfield'
-import InputIcon from 'primevue/inputicon'
-import InputSwitch from 'primevue/inputswitch'
-import InputText from 'primevue/inputtext'
-import Tag from 'primevue/tag'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import { useCatalogStore } from '../../stores/catalog'
 import { useOrderDraftStore } from '../../stores/orderDraft'
 import { useAppStore } from '../../stores/app'
 import type { Product } from '../../types'
+import ProductScannerModal from '../ProductScannerModal.vue'
 
 const catalogStore = useCatalogStore()
 const orderStore = useOrderDraftStore()
 const appStore = useAppStore()
+
+const showScanner = ref(false)
 
 const categoryOptions: Array<Product['category'] | 'all'> = [
   'all',
@@ -46,6 +41,10 @@ function packageLabel(product: Product): string {
 
 function isSelected(productId: string): boolean {
   return Boolean(orderStore.items[productId])
+}
+
+function onProductAdded(product: Product) {
+  orderStore.toggleItem(product.id)
 }
 
 const emit = defineEmits<{
@@ -88,11 +87,20 @@ function goNext() {
 
       <div class="flex items-center justify-between rounded-lg bg-orange-50 px-3 py-2">
         <span class="text-sm font-medium text-slate-700">{{ $t('selectedOnly') }}</span>
-        <InputSwitch
+        <ToggleSwitch
           :model-value="catalogStore.selectedOnly"
           @update:model-value="catalogStore.setSelectedOnly(Boolean($event))"
         />
       </div>
+
+      <Button
+        icon="pi pi-camera"
+        :label="$t('scanner.title')"
+        class="w-full"
+        size="large"
+        severity="secondary"
+        @click="showScanner = true"
+      />
     </div>
 
     <div v-if="catalogStore.isLoading" class="rounded-xl bg-white p-5 text-center text-slate-700 shadow-sm ring-1 ring-orange-100">
@@ -112,11 +120,19 @@ function goNext() {
         <template #content>
           <div class="flex gap-3">
             <img
+              v-if="product.imageUrl"
               :src="product.imageUrl"
               :alt="productName(product)"
-              class="h-24 w-24 rounded-lg object-cover"
+              class="h-24 w-24 rounded-lg object-cover flex-shrink-0"
               loading="lazy"
             />
+            <div
+              v-else
+              class="h-24 w-24 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0"
+              aria-hidden="true"
+            >
+              <i class="pi pi-image text-3xl text-orange-300" />
+            </div>
 
             <div class="min-w-0 flex-1 space-y-1">
               <div class="flex items-start justify-between gap-2">
@@ -165,6 +181,11 @@ function goNext() {
       :label="$t('next')"
       :disabled="orderStore.selectedCount === 0"
       @click="goNext"
+    />
+
+    <ProductScannerModal
+      v-model:visible="showScanner"
+      @added="onProductAdded"
     />
   </section>
 </template>
