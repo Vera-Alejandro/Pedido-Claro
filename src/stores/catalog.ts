@@ -5,6 +5,8 @@ import type { Product } from '../types'
 
 type CategoryFilter = Product['category'] | 'all'
 
+const SCANNED_KEY = 'order-app-scanned-products'
+
 function normalizeText(value: string): string {
   return value
     .normalize('NFD')
@@ -12,9 +14,24 @@ function normalizeText(value: string): string {
     .toLowerCase()
 }
 
+// localStorage keeps scanned products across sessions (intentional — scanning is effort-intensive)
+function loadScannedProducts(): Product[] {
+  try {
+    const raw = localStorage.getItem(SCANNED_KEY)
+    return raw ? (JSON.parse(raw) as Product[]) : []
+  } catch {
+    return []
+  }
+}
+
+function persistScannedProducts(products: Product[]): void {
+  localStorage.setItem(SCANNED_KEY, JSON.stringify(products))
+}
+
 export const useCatalogStore = defineStore('catalog', {
   state: () => ({
     products: [] as Product[],
+    scannedProducts: loadScannedProducts(),
     isLoading: false,
     activeCategory: 'all' as CategoryFilter,
     searchTerm: '',
@@ -36,10 +53,17 @@ export const useCatalogStore = defineStore('catalog', {
     async fetchProducts() {
       this.isLoading = true
       try {
-        this.products = await getCatalogProducts()
+        const base = await getCatalogProducts()
+        this.products = [...base, ...this.scannedProducts]
       } finally {
         this.isLoading = false
       }
+    },
+    addScannedProduct(product: Product) {
+      if (this.products.some((p) => p.id === product.id)) return
+      this.scannedProducts.push(product)
+      this.products.push(product)
+      persistScannedProducts(this.scannedProducts)
     },
     setCategory(category: CategoryFilter) {
       this.activeCategory = category
