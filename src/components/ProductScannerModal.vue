@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import * as Sentry from '@sentry/vue'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { NotFoundException } from '@zxing/library'
 import { useToast } from 'primevue/usetoast'
@@ -38,6 +39,10 @@ const pendingProduct = ref<Product | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const videoEl = ref<HTMLVideoElement | null>(null)
 let scannerControls: ScannerControls | null = null
+
+const isIOS =
+  /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 
 const formErrors = ref({ brand: false, nameEs: false })
 const form = ref({
@@ -100,14 +105,19 @@ async function onFileCapture(event: Event) {
     URL.revokeObjectURL(url)
     await queryProduct(detectedBarcode.value)
   } catch (error) {
-    if (error instanceof NotFoundException) {
-      errorMessage.value = t('scanner.barcodeNotFound')
-    }
-
-    console.error('Error reading barcode from image', error)
     URL.revokeObjectURL(url)
-    errorMessage.value = t('scanner.barcodeError')
+    const isNotFound = error instanceof NotFoundException
+    errorMessage.value = isNotFound ? t('scanner.barcodeNotFound') : t('scanner.barcodeError')
     state.value = 'error'
+    Sentry.addBreadcrumb({
+      category: 'scanner',
+      message: 'onFileCapture error',
+      level: isNotFound ? 'info' : 'error',
+      data: { isIOS, errorName: error instanceof Error ? error.name : String(error) },
+    })
+    if (!isNotFound) {
+      Sentry.captureException(error, { tags: { isIOS, scannerState: 'reading' } })
+    }
   } finally {
     if (fileInput.value) fileInput.value.value = ''
   }
@@ -116,6 +126,8 @@ async function onFileCapture(event: Event) {
 // --- Live camera scan ---
 
 async function startLiveScan() {
+  if (isIOS) return  // button is hidden on iOS; guard against programmatic calls
+
   state.value = 'scanning'
   await nextTick()
 
@@ -124,6 +136,13 @@ async function startLiveScan() {
     state.value = 'error'
     return
   }
+
+  Sentry.addBreadcrumb({
+    category: 'scanner',
+    message: 'Live scan started',
+    level: 'info',
+    data: { browser: navigator.userAgent },
+  })
 
   try {
     const reader = new BrowserMultiFormatReader()
@@ -134,18 +153,38 @@ async function startLiveScan() {
         if (result) {
           stopLiveScan()
           detectedBarcode.value = result.getText()
+          Sentry.addBreadcrumb({
+            category: 'scanner',
+            message: 'Barcode detected (live scan)',
+            level: 'info',
+            data: { barcode: detectedBarcode.value },
+          })
           void queryProduct(detectedBarcode.value)
         } else if (err && err.name !== 'NotFoundException') {
           stopLiveScan()
           errorMessage.value = t('scanner.cameraError')
           state.value = 'error'
+          Sentry.captureException(err, { tags: { isIOS, scannerState: 'scanning' } })
         }
       },
     )
-  } catch {
+  } catch (error) {
     stopLiveScan()
-    errorMessage.value = t('scanner.cameraError')
     state.value = 'error'
+    const errName = error instanceof Error ? error.name : 'UnknownError'
+    const errMsg = error instanceof Error ? error.message : String(error)
+    if (errName === 'NotAllowedError') {
+      errorMessage.value = t('scanner.cameraPermissionDenied')
+    } else if (errName === 'NotFoundError' || errName === 'NotSupportedError') {
+      errorMessage.value = t('scanner.cameraNotFound')
+    } else {
+      errorMessage.value = t('scanner.cameraGenericError', { message: errMsg })
+    }
+    console.error('[Scanner] startLiveScan failed', { isIOS, browser: navigator.userAgent, errName, errMsg })
+    Sentry.captureException(error, {
+      tags: { isIOS, scannerState: 'scanning' },
+      extra: { browser: navigator.userAgent, errName },
+    })
   }
 }
 
@@ -160,17 +199,31 @@ async function queryProduct(barcode: string) {
 
   state.value = 'lookup'
 
+  Sentry.addBreadcrumb({
+    category: 'scanner',
+    message: 'Product lookup started',
+    level: 'info',
+    data: { barcode, isIOS },
+  })
+
   try {
     const result = await lookupBarcode(barcode)
+    Sentry.addBreadcrumb({
+      category: 'scanner',
+      message: 'Product lookup result',
+      level: 'info',
+      data: { barcode, found: result.found },
+    })
     if (result.found) {
       pendingProduct.value = { id: barcode, code: barcode, ...result.data }
       state.value = 'preview'
     } else {
       goManual(barcode)
     }
-  } catch {
-    errorMessage.value = t('scanner.cameraError')
+  } catch (error) {
+    errorMessage.value = t('scanner.lookupError')
     state.value = 'error'
+    Sentry.captureException(error, { tags: { isIOS, scannerState: 'lookup' }, extra: { barcode } })
   }
 }
 
@@ -262,6 +315,7 @@ function saveManual() {
       />
 
       <Button
+        v-if="!isIOS"
         icon="pi pi-video"
         :label="t('scanner.liveScan')"
         class="w-full"
@@ -270,6 +324,12 @@ function saveManual() {
         aria-label="t('scanner.liveScan')"
         @click="startLiveScan"
       />
+      <p
+        v-else
+        class="rounded-lg bg-orange-50 px-4 py-3 text-sm text-orange-700 text-center"
+      >
+        {{ t('scanner.iosNote') }}
+      </p>
 
       <Button
         icon="pi pi-pencil"
